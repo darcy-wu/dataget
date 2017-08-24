@@ -6,8 +6,10 @@ import time
 import datetime
 import pandas as pd
 import re
+import os
 import tquant as tt
 import tushare as ts
+import dataget.helper as helper
 
 def _get_data(url):
     time.sleep(0.1)
@@ -76,8 +78,10 @@ def get_hist_tick(symbol, date):
         type   : 买卖盘
         volume : 成交手
     """
-    df =  tt.get_tick_history(symbol, date).rename(columns={'close': 'price', 'vol': 'volume'}, inplace=True)
-    del df.code
+    df =  tt.get_tick_history(symbol, date)
+    if df:
+        df.rename(columns={'close': 'price', 'vol': 'volume'}, inplace=True)
+        del df['code']
     return df
 
 def get_today_tick2(symbol):
@@ -88,3 +92,18 @@ def get_today_tick2(symbol):
     del df.time
     return df
 
+def get(symbol, date):
+    s = '%s/tick/%s/%s.csv' % (helper.data_path, date, symbol)
+    if os.path.exists(s):
+        return pd.read_csv(s, index_col='date', date_parser=lambda x : pd.Timestamp(x))
+    else:
+        df =  tt.get_tick_history(symbol, date)
+        if type(df) == pd.core.frame.DataFrame and len(df):
+            df.rename(columns={'close': 'price', 'vol': 'volume'}, inplace=True)
+            del df['code']
+            os.makedirs('%s/tick/%s' % (helper.data_path, date), exist_ok=True)
+            df.to_csv(s, encoding='utf-8')
+            return df
+
+def update():
+    pass
