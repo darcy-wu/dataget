@@ -3,13 +3,15 @@
 import urllib.request
 import json
 import time
-import datetime
+from datetime import datetime
 import pandas as pd
 import re
 import os
 import tquant as tt
 import tushare as ts
 import dataget.helper as helper
+import dataget.info as info
+import time
 
 def _get_data(url):
     time.sleep(0.1)
@@ -92,18 +94,56 @@ def get_today_tick2(symbol):
     del df.time
     return df
 
-def get(symbol, date):
-    s = '%s/tick/%s/%s.csv' % (helper.data_path, date, symbol)
-    if os.path.exists(s):
-        return pd.read_csv(s, index_col='date', date_parser=lambda x : pd.Timestamp(x))
+def update_db_tick(symbol, date):
+    print('update tick %s@%s' % (symbol, date), end='')
+    df =  tt.get_tick_history(symbol, date)
+    if type(df) == pd.core.frame.DataFrame and len(df):
+        df.rename(columns={'close': 'price', 'vol': 'volume'}, inplace=True)
+        os.makedirs('%s/%s' % (helper.tick_path, date), exist_ok=True)
+        s = _tick_file(symbol, date)
+        df.sort_index().to_csv(s, encoding='utf-8')
+        print(' ok', end='')
+        print(' %s' % datetime.now().time())
+        return True
     else:
-        df =  tt.get_tick_history(symbol, date)
-        if type(df) == pd.core.frame.DataFrame and len(df):
-            df.rename(columns={'close': 'price', 'vol': 'volume'}, inplace=True)
-            del df['code']
-            os.makedirs('%s/tick/%s' % (helper.data_path, date), exist_ok=True)
-            df.to_csv(s, encoding='utf-8')
-            return df
+        print(' failed', end='')
+        print(' %s' % datetime.now().time())
+        return False
 
-def update():
-    pass
+def get(symbol, date=''):
+    if date == '':
+        date = datetime.today().strftime('%Y-%m-%d')
+    s = _tick_file(symbol, date)
+    if not os.path.exists(s):
+        if not update_db_tick(symbol, date):
+            return None
+        return pd.read_csv(s, index_col='date', date_parser=lambda x : pd.Timestamp(x))
+
+def update_db_tick_auto(start_symbol='', date='', sleep=5):
+    fail_list = []
+    if date == '':
+        date = datetime.today().strftime('%Y-%m-%d')
+    ok = 0
+    symbols = info.get_symbol_list()
+    total = len(symbols)
+    count = 0
+    for code in symbols:
+        count += 1
+        if ok == 0:
+            if start_symbol == '':
+                ok = 1
+            elif start_symbol == code:
+                ok = 1
+        else:
+            s = _tick_file(code, date)
+            if not os.path.exists(s):
+                if not update_db_tick(code, date) :
+                    fail_list.append(code)
+                time.sleep(sleep)
+        print('process %30f%%' % (count/total*100))
+    return fail_list
+
+def _tick_file(symbol, date):
+    return '%s/%s/%s.csv' % (helper.tick_path, date, symbol)
+
+
